@@ -15,7 +15,7 @@ const DELAYS: [f32; 32] = [
 
 struct Jverb {
     params: Arc<JverbParams>,
-    audio: StupidFDN
+    audio: HouseholderFDN
 }
 
 #[derive(Params)]
@@ -26,14 +26,17 @@ struct JverbParams {
     pub size: FloatParam,
     #[id = "time"]
     pub time: FloatParam,
+    #[id = "lowpass"]
+    pub lowpass: FloatParam,
 }
 
 impl Default for Jverb {
     fn default() -> Self {
         let default_params = JverbParams::default();
         let time = default_params.time.smoothed.next();
+        let lowpass = default_params.lowpass.smoothed.next();
 
-        let fdn = StupidFDN::new(
+        let mut fdn = HouseholderFDN::new(
             // Simple testing primes
             // vec![
             //     (DEFAULT_SAMPLE_RATE as f32 * 0.02) as usize, 
@@ -42,9 +45,11 @@ impl Default for Jverb {
             //     (DEFAULT_SAMPLE_RATE as f32 * 0.07) as usize
             // ],
             DELAYS.to_vec().iter().map(|delay| (delay * DEFAULT_SAMPLE_RATE as f32) as usize).collect(),
-            time,
-            DEFAULT_SAMPLE_RATE
+            &time,
+            &DEFAULT_SAMPLE_RATE
         );
+
+        fdn.set_lowpass_cutoff(&lowpass, &DEFAULT_SAMPLE_RATE);
 
         Self {
             params: Arc::new(default_params),
@@ -69,6 +74,11 @@ impl Default for JverbParams {
                 .with_string_to_value(formatters::s2v_f32_percentage()),
             // Reverb time 
             time: FloatParam::new("Time", 0.9, FloatRange::Linear { min: 0.8, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(1.0))
+                .with_value_to_string(formatters::v2s_f32_percentage(0))
+                .with_string_to_value(formatters::s2v_f32_percentage()),
+            // Lowpass cutoff 
+            lowpass: FloatParam::new("Lowpass", 0.8, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_smoother(SmoothingStyle::Linear(1.0))
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage())
@@ -125,25 +135,29 @@ impl Plugin for Jverb {
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext,
+        context: &mut impl ProcessContext,
     ) -> ProcessStatus {
         let mix = self.params.mix.smoothed.next();
         let size = self.params.size.smoothed.next();
         let time = self.params.time.smoothed.next();
+        let lowpass = self.params.lowpass.smoothed.next();
+
+        let sample_rate = context.transport().sample_rate;
 
         self.audio.set_gain(&time);
         self.audio.set_delays(DELAYS.to_vec().iter().map(|delay| (delay * size * DEFAULT_SAMPLE_RATE as f32) as usize).collect());
+        self.audio.set_lowpass_cutoff(&(lowpass* sample_rate / 10.0), &(sample_rate as usize));
 
         // Simple equal power dry/wet mix
         let (wet_t, dry_t) = (mix.sqrt(), (1.0 - mix).sqrt());
 
         let channels = buffer.as_slice();
 
-        // TODO: all channels, less dumb
+        // TODO: all channels
         for ii in 0..channels[0].len() {
             let sample_l = channels[0][ii];
             let sample_r = channels[1][ii];
-            let output = self.audio.process(&[sample_l.clone(), sample_r.clone()]);
+            let output = self.audio.process(&[sample_l, sample_r]);
             channels[0][ii] = (sample_l * dry_t) + (output[0] * wet_t);
             channels[1][ii] = (sample_r * dry_t) + (output[1] * wet_t);
         }

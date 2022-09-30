@@ -1,3 +1,4 @@
+use core::f32::consts::TAU;
 
 pub trait Signal {
     /// Process one sample
@@ -39,11 +40,11 @@ impl IntegerDelay {
         self.delay = delay.min(self.buffer.len() -1);
 
         // Clear the buffer. It can be fun not to, however
-        // for (ii, sample) in self.buffer.iter_mut().enumerate() {
-        //     if ii >= self.delay {
-        //         *sample = 0f32;
-        //     }
-        // }
+        for (ii, sample) in self.buffer.iter_mut().enumerate() {
+            if ii >= self.delay {
+                *sample = 0f32;
+            }
+        }
     }
 }
 
@@ -101,29 +102,89 @@ impl<T: Signal> Feedback<T> {
     }
 }
 
-pub struct StupidFDN {
+#[derive(Clone)]
+pub struct OnePoleLowpass {
+    value: f32,
+    coeff: f32,
+    cutoff: f32
+}
+
+impl Signal for OnePoleLowpass {
+     fn tick(
+        &mut self,
+        input: &f32,
+    ) -> f32 {
+        // Bypass
+        if self.cutoff == 1.0 {
+            return input.clone()
+        }
+        self.value = (1.0 - self.coeff) * *input + self.coeff * self.value;
+        self.value
+    }   
+}
+
+impl OnePoleLowpass {
+    pub fn new (
+        cutoff: f32,
+        sample_rate: &usize
+    ) -> Self {
+        let mut filter = Self {
+            value: 0f32,
+            coeff: 0f32,
+            cutoff: 0f32
+        };
+
+        filter.set_cutoff(cutoff, sample_rate);
+        filter
+    }
+
+    pub fn set_cutoff (
+        &mut self,
+        cutoff: f32,
+        sample_rate: &usize
+    ) -> () {
+        self.cutoff = cutoff;
+        self.coeff = (-TAU * self.cutoff / *sample_rate as f32).exp();
+    }
+}
+
+impl Default for OnePoleLowpass {
+    fn default () -> Self {
+        Self {
+            value: 0f32,
+            coeff: 0f32,
+            cutoff: 1f32
+        }
+    }
+}
+
+pub struct HouseholderFDN {
     delays: Vec<IntegerDelay>,
+    filters: Vec<OnePoleLowpass>,
     values: Vec<f32>,
     gain: f32,
 }
 
-impl StupidFDN {
+impl HouseholderFDN {
     pub fn new (
         delays: Vec<usize>,
-        gain: f32,
-        max_delay: usize,
+        gain: &f32,
+        max_delay: &usize,
     ) -> Self {
         let matrix_size = delays.len();
         let delays: Vec<IntegerDelay> = delays.iter().map(|delay| {
             IntegerDelay::new(
-                max_delay,
+                max_delay.clone(),
                 delay.clone()
             )
         }).collect();
 
+        let filters = vec![OnePoleLowpass::default(); matrix_size];
+
         Self {
             delays: delays,
-            gain: gain,
+            filters: filters,
+            gain: gain.clone(),
             values: vec![0f32; matrix_size]
         }
     }
@@ -171,21 +232,17 @@ impl StupidFDN {
         input: &[f32]
     ) -> Vec<f32> {
         let delays_len = self.delays.len();
-        let mut output = StupidFDN::split(input, delays_len);
+        let mut output = HouseholderFDN::split(input, delays_len);
 
         // Run the delay lines
         for (ii, sample) in output.iter_mut().enumerate() {
             let input = *sample + self.values[ii];
-            *sample = self.delays[ii].tick(&input) * self.gain;
+            *sample = self.filters[ii].tick(&self.delays[ii].tick(&input)) * self.gain;
         }
 
-        // I don't know what I'm doing
+        // Householder feedback matrix. All outputs are summed and fed back into all inputs
         // https://github.com/madronalabs/madronalib/blob/master/source/DSP/MLDSPFilters.h#L953
-        // inputs = input gains*input sample + filters(M*delay outputs)
-        // The feedback matrix M is a unit-gain Householder matrix, which is just
-        // the identity matrix minus a constant k, where k = 2/size. Since
-        // multiplying this can be simplified so much, you just see a few operations
-        // here, not a general matrix multiply.
+        // https://ccrma.stanford.edu/~jos/pasp/Householder_Feedback_Matrix.html
         let mut delay_sum: f32 = output.iter().sum();
         delay_sum *= 2.0 / delays_len as f32;
 
@@ -194,7 +251,7 @@ impl StupidFDN {
             *value = output[ii] - delay_sum;
         }
 
-        StupidFDN::join(&output, input.len())
+        HouseholderFDN::join(&output, input.len())
     }
 
     pub fn set_gain (
@@ -210,6 +267,16 @@ impl StupidFDN {
     ) -> () {
         for (ii, delay) in delays.iter().enumerate() {
             self.delays[ii].set_delay(delay)
+        }
+    }
+
+    pub fn set_lowpass_cutoff (
+        &mut self,
+        cutoff: &f32,
+        sample_rate: &usize
+    ) -> () {
+        for filter in self.filters.iter_mut() {
+            filter.set_cutoff(cutoff.clone(), &sample_rate);
         }
     }
 }
@@ -277,6 +344,38 @@ mod tests {
     }
 
     #[test]
+    fn test_one_pole_lowpass() {
+        let mut lowpass = OnePoleLowpass::new(
+            0.9,
+            &10
+        );
+
+        assert_eq!(lowpass.tick(&1.0), 0.43191642);
+        assert_eq!(lowpass.tick(&1.0), 0.677281);
+
+        // Bypass at max cutoff
+        lowpass.set_cutoff(1.0, &10);
+        assert_eq!(lowpass.tick(&1.0), 1.0);
+    }
+
+
+    #[test]
+    fn test_one_pole_lowpass_realistic_sample_rate() {
+        let mut lowpass = OnePoleLowpass::new(
+            // TODO: this is weird
+            0.9 * 44100.0 / 10.0,
+            &44100
+        );
+
+        assert_eq!(lowpass.tick(&1.0), 0.43191642);
+        assert_eq!(lowpass.tick(&1.0), 0.677281);
+
+        // Bypass at max cutoff
+        lowpass.set_cutoff(1.0, &10);
+        assert_eq!(lowpass.tick(&1.0), 1.0);
+    }
+
+    #[test]
     fn test_feedback() {
         let delay = IntegerDelay::new(
             10,
@@ -302,7 +401,6 @@ mod tests {
 
         let mut feedback = Feedback::<IntegerDelay>::new(delay, 0.5);
 
-
         assert_eq!(feedback.tick(&1.0), 0.0);
         assert_eq!(feedback.tick(&1.0), 0.5);
 
@@ -315,10 +413,10 @@ mod tests {
 
     #[test]
     fn test_fdn() {
-        let mut fdn = StupidFDN::new(
+        let mut fdn = HouseholderFDN::new(
             vec![2, 3, 5, 7],
-            0.5,
-            10
+            &0.5,
+            &10
         );
 
         for _i in 0..10 {
@@ -329,5 +427,24 @@ mod tests {
         assert_eq!(fdn.process(&[1.0, 1.0]), [0.25390625, 0.296875]);
         assert_eq!(fdn.process(&[1.0, 1.0]), [0.31640625, 0.328125]);
         assert_eq!(fdn.process(&[1.0, 1.0]), [0.30859375, 0.171875]);
+    }
+
+    #[test]
+    fn test_fdn_lowpass() {
+        let mut fdn = HouseholderFDN::new(
+            vec![2, 3, 5, 7],
+            &1.0,
+            &10
+        );
+
+        fdn.set_lowpass_cutoff(&0.9, &10);
+
+        for _i in 0..10 {
+            fdn.process(&[1.0, 1.0]);    
+        }
+
+        assert_eq!(fdn.process(&[1.0, 1.0]), [0.70215225, 0.64007735]);
+        assert_eq!(fdn.process(&[1.0, 1.0]), [0.52303684, 0.52741337]);
+        assert_eq!(fdn.process(&[1.0, 1.0]), [0.41039184, 0.44365278]);
     }
 }
