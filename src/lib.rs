@@ -16,6 +16,7 @@ const DELAYS: [f32; 32] = [
 struct Jverb {
     params: Arc<JverbParams>,
     audio: HouseholderFDN,
+    delays_vec: Vec<f32>,
 }
 
 #[derive(Params)]
@@ -36,6 +37,8 @@ impl Default for Jverb {
         let time = default_params.time.smoothed.next();
         let lowpass = default_params.lowpass.smoothed.next();
 
+        let delays_vec = DELAYS.to_vec();
+
         let mut fdn = HouseholderFDN::new(
             // Simple testing primes
             // vec![
@@ -44,8 +47,7 @@ impl Default for Jverb {
             //     (DEFAULT_SAMPLE_RATE as f32 * 0.05) as usize,
             //     (DEFAULT_SAMPLE_RATE as f32 * 0.07) as usize
             // ],
-            DELAYS
-                .to_vec()
+            delays_vec
                 .iter()
                 .map(|delay| (delay * DEFAULT_SAMPLE_RATE as f32) as usize)
                 .collect(),
@@ -57,6 +59,7 @@ impl Default for Jverb {
 
         Self {
             params: Arc::new(default_params),
+            delays_vec,
             audio: fdn,
         }
     }
@@ -121,8 +124,8 @@ impl Plugin for Jverb {
     }
 
     fn accepts_bus_config(&self, config: &BusConfig) -> bool {
-        // This works with stero
-        config.num_input_channels == config.num_output_channels && config.num_input_channels == 2
+        // Works with any symmetrical channel input
+        config.num_input_channels == config.num_output_channels && config.num_input_channels > 0
     }
 
     fn initialize(
@@ -157,8 +160,7 @@ impl Plugin for Jverb {
 
         self.audio.set_gain(time);
         self.audio.set_delays(
-            DELAYS
-                .to_vec()
+            self.delays_vec
                 .iter()
                 .map(|delay| (delay * size * DEFAULT_SAMPLE_RATE as f32) as usize)
                 .collect(),
@@ -171,13 +173,14 @@ impl Plugin for Jverb {
 
         let channels = buffer.as_slice();
 
-        // TODO: all channels
         for ii in 0..channels[0].len() {
-            let sample_l = channels[0][ii];
-            let sample_r = channels[1][ii];
-            let output = self.audio.process(&[sample_l, sample_r]);
-            channels[0][ii] = (sample_l * dry_t) + (output[0] * wet_t);
-            channels[1][ii] = (sample_r * dry_t) + (output[1] * wet_t);
+            let samples = (0..channels.len()).map(|yy| channels[yy][ii]).collect();
+
+            let output = self.audio.process(samples);
+
+            for yy in 0..channels.len() {
+                channels[yy][ii] = (channels[yy][ii] * dry_t) + (output[yy] * wet_t);
+            }
         }
 
         ProcessStatus::Normal

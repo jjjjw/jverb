@@ -151,7 +151,7 @@ impl HouseholderFDN {
         }
     }
 
-    fn split(input: &[f32], target_len: usize) -> Vec<f32> {
+    fn split(input: Vec<f32>, target_len: usize) -> Vec<f32> {
         let input_len = input.len();
         let section_len = (target_len / input_len) as usize;
         let mut curr_section_len = 0;
@@ -170,7 +170,7 @@ impl HouseholderFDN {
             .collect()
     }
 
-    fn join(input: &[f32], target_len: usize) -> Vec<f32> {
+    fn join(input: Vec<f32>, target_len: usize) -> Vec<f32> {
         let input_len = input.len();
         let section_len = (input_len / target_len) as usize;
         let mut section_index = 0;
@@ -186,8 +186,9 @@ impl HouseholderFDN {
             .collect()
     }
 
-    pub fn process(&mut self, input: &[f32]) -> Vec<f32> {
+    pub fn process(&mut self, input: Vec<f32>) -> Vec<f32> {
         let delays_len = self.delays.len();
+        let input_len = input.len();
         let mut output = HouseholderFDN::split(input, delays_len);
 
         // Run the delay lines
@@ -207,7 +208,7 @@ impl HouseholderFDN {
             *value = output[ii] - delay_sum;
         }
 
-        HouseholderFDN::join(&output, input.len())
+        HouseholderFDN::join(output, input_len)
     }
 
     pub fn set_gain(&mut self, gain: f32) -> () {
@@ -342,13 +343,13 @@ mod tests {
         let mut fdn = HouseholderFDN::new(vec![2, 3, 5, 7], 0.5, 10);
 
         for _i in 0..10 {
-            fdn.process(&[1.0, 1.0]);
+            fdn.process(vec![1.0, 1.0]);
         }
 
-        assert_eq!(fdn.process(&[1.0, 1.0]), [0.296875, 0.3125]);
-        assert_eq!(fdn.process(&[1.0, 1.0]), [0.25390625, 0.296875]);
-        assert_eq!(fdn.process(&[1.0, 1.0]), [0.31640625, 0.328125]);
-        assert_eq!(fdn.process(&[1.0, 1.0]), [0.30859375, 0.171875]);
+        assert_eq!(fdn.process(vec![1.0, 1.0]), [0.296875, 0.3125]);
+        assert_eq!(fdn.process(vec![1.0, 1.0]), [0.25390625, 0.296875]);
+        assert_eq!(fdn.process(vec![1.0, 1.0]), [0.31640625, 0.328125]);
+        assert_eq!(fdn.process(vec![1.0, 1.0]), [0.30859375, 0.171875]);
     }
 
     #[test]
@@ -358,11 +359,11 @@ mod tests {
         fdn.set_lowpass_cutoff(0.9, 10);
 
         for _i in 0..10 {
-            fdn.process(&[1.0, 1.0]);
+            fdn.process(vec![1.0, 1.0]);
         }
 
-        assert_eq!(fdn.process(&[1.0, 1.0]), [0.70215225, 0.64007735]);
-        assert_eq!(fdn.process(&[1.0, 1.0]), [0.52303684, 0.52741337]);
-        assert_eq!(fdn.process(&[1.0, 1.0]), [0.41039184, 0.44365278]);
+        assert_eq!(fdn.process(vec![1.0, 1.0]), [0.70215225, 0.64007735]);
+        assert_eq!(fdn.process(vec![1.0, 1.0]), [0.52303684, 0.52741337]);
+        assert_eq!(fdn.process(vec![1.0, 1.0]), [0.41039184, 0.44365278]);
     }
 }
