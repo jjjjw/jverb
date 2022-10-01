@@ -41,7 +41,7 @@ impl IntegerDelay {
 impl Signal for IntegerDelay {
     fn tick(&mut self, input: f32) -> f32 {
         let output = self.buffer[self.write_index];
-        self.buffer[self.write_index] = input.clone();
+        self.buffer[self.write_index] = input;
 
         self.write_index += 1;
         if self.write_index >= self.delay {
@@ -61,7 +61,7 @@ impl<T: Signal> Signal for Feedback<T> {
     fn tick(&mut self, input: f32) -> f32 {
         let fback = input + self.value;
         let output = self.signal.tick(fback) * self.gain;
-        self.value = output.clone();
+        self.value = output;
         output
     }
 }
@@ -76,7 +76,7 @@ impl<T: Signal> Feedback<T> {
     }
 
     pub fn set_gain(&mut self, gain: f32) -> () {
-        self.gain = gain.clone();
+        self.gain = gain;
     }
 }
 
@@ -91,7 +91,7 @@ impl Signal for OnePoleLowpass {
     fn tick(&mut self, input: f32) -> f32 {
         // Bypass
         if self.cutoff == 1.0 {
-            return input.clone();
+            return input;
         }
         self.value = (1.0 - self.coeff) * input + self.coeff * self.value;
         self.value
@@ -138,7 +138,7 @@ impl HouseholderFDN {
         let matrix_size = delays.len();
         let delays: Vec<IntegerDelay> = delays
             .iter()
-            .map(|delay| IntegerDelay::new(max_delay.clone(), delay.clone()))
+            .map(|delay| IntegerDelay::new(max_delay, *delay))
             .collect();
 
         let filters = vec![OnePoleLowpass::default(); matrix_size];
@@ -146,7 +146,7 @@ impl HouseholderFDN {
         Self {
             delays: delays,
             filters: filters,
-            gain: gain.clone(),
+            gain: gain,
             values: vec![0f32; matrix_size],
         }
     }
@@ -159,7 +159,7 @@ impl HouseholderFDN {
 
         (0..target_len)
             .map(|_ii| {
-                let output = input[section_index].clone();
+                let output = input[section_index];
                 curr_section_len += 1;
                 if curr_section_len >= section_len {
                     curr_section_len = 0;
@@ -212,18 +212,18 @@ impl HouseholderFDN {
     }
 
     pub fn set_gain(&mut self, gain: f32) -> () {
-        self.gain = gain.clone();
+        self.gain = gain;
     }
 
     pub fn set_delays(&mut self, delays: Vec<usize>) -> () {
         for (ii, delay) in delays.iter().enumerate() {
-            self.delays[ii].set_delay(delay.clone())
+            self.delays[ii].set_delay(*delay)
         }
     }
 
     pub fn set_lowpass_cutoff(&mut self, cutoff: f32, sample_rate: usize) -> () {
         for filter in self.filters.iter_mut() {
-            filter.set_cutoff(cutoff.clone(), sample_rate);
+            filter.set_cutoff(cutoff, sample_rate);
         }
     }
 }
