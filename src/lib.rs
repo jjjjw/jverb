@@ -15,7 +15,7 @@ const DELAYS: [f32; 32] = [
 
 struct Jverb {
     params: Arc<JverbParams>,
-    audio: HouseholderFDN
+    audio: HouseholderFDN,
 }
 
 #[derive(Params)]
@@ -39,21 +39,25 @@ impl Default for Jverb {
         let mut fdn = HouseholderFDN::new(
             // Simple testing primes
             // vec![
-            //     (DEFAULT_SAMPLE_RATE as f32 * 0.02) as usize, 
-            //     (DEFAULT_SAMPLE_RATE as f32 * 0.03) as usize, 
-            //     (DEFAULT_SAMPLE_RATE as f32 * 0.05) as usize, 
+            //     (DEFAULT_SAMPLE_RATE as f32 * 0.02) as usize,
+            //     (DEFAULT_SAMPLE_RATE as f32 * 0.03) as usize,
+            //     (DEFAULT_SAMPLE_RATE as f32 * 0.05) as usize,
             //     (DEFAULT_SAMPLE_RATE as f32 * 0.07) as usize
             // ],
-            DELAYS.to_vec().iter().map(|delay| (delay * DEFAULT_SAMPLE_RATE as f32) as usize).collect(),
-            &time,
-            &DEFAULT_SAMPLE_RATE
+            DELAYS
+                .to_vec()
+                .iter()
+                .map(|delay| (delay * DEFAULT_SAMPLE_RATE as f32) as usize)
+                .collect(),
+            time,
+            DEFAULT_SAMPLE_RATE,
         );
 
-        fdn.set_lowpass_cutoff(&lowpass, &DEFAULT_SAMPLE_RATE);
+        fdn.set_lowpass_cutoff(lowpass, DEFAULT_SAMPLE_RATE);
 
         Self {
             params: Arc::new(default_params),
-            audio: fdn
+            audio: fdn,
         }
     }
 }
@@ -67,21 +71,28 @@ impl Default for JverbParams {
                 .with_unit("%")
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
-            // Reverb size 
-            size: FloatParam::new("Size", 1.0, FloatRange::Linear { min: 0.5, max: 10.0 })
-                .with_smoother(SmoothingStyle::Linear(1.0))
-                .with_value_to_string(formatters::v2s_f32_percentage(0))
-                .with_string_to_value(formatters::s2v_f32_percentage()),
-            // Reverb time 
+            // Reverb size
+            size: FloatParam::new(
+                "Size",
+                1.0,
+                FloatRange::Linear {
+                    min: 0.5,
+                    max: 10.0,
+                },
+            )
+            .with_smoother(SmoothingStyle::Linear(1.0))
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage()),
+            // Reverb time
             time: FloatParam::new("Time", 0.9, FloatRange::Linear { min: 0.8, max: 1.0 })
                 .with_smoother(SmoothingStyle::Linear(1.0))
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
-            // Lowpass cutoff 
+            // Lowpass cutoff
             lowpass: FloatParam::new("Lowpass", 0.8, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_smoother(SmoothingStyle::Linear(1.0))
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
-                .with_string_to_value(formatters::s2v_f32_percentage())
+                .with_string_to_value(formatters::s2v_f32_percentage()),
         }
     }
 }
@@ -144,9 +155,16 @@ impl Plugin for Jverb {
 
         let sample_rate = context.transport().sample_rate;
 
-        self.audio.set_gain(&time);
-        self.audio.set_delays(DELAYS.to_vec().iter().map(|delay| (delay * size * DEFAULT_SAMPLE_RATE as f32) as usize).collect());
-        self.audio.set_lowpass_cutoff(&(lowpass* sample_rate / 10.0), &(sample_rate as usize));
+        self.audio.set_gain(time);
+        self.audio.set_delays(
+            DELAYS
+                .to_vec()
+                .iter()
+                .map(|delay| (delay * size * DEFAULT_SAMPLE_RATE as f32) as usize)
+                .collect(),
+        );
+        self.audio
+            .set_lowpass_cutoff(lowpass * sample_rate / 10.0, sample_rate as usize);
 
         // Simple equal power dry/wet mix
         let (wet_t, dry_t) = (mix.sqrt(), (1.0 - mix).sqrt());
