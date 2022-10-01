@@ -12,6 +12,7 @@ const DELAYS: [f32; 32] = [
     0.062715, 0.076377, 0.044339, 0.076725, 0.077884, 0.046126, 0.067741, 0.049800, 0.051709,
     0.082923, 0.070121, 0.079315, 0.055039, 0.081859,
 ];
+const MAX_SIZE: f32 = 10.0;
 
 struct Jverb {
     params: Arc<JverbParams>,
@@ -52,10 +53,10 @@ impl Default for Jverb {
                 .map(|delay| (delay * DEFAULT_SAMPLE_RATE as f32) as usize)
                 .collect(),
             time,
-            DEFAULT_SAMPLE_RATE,
+            (MAX_SIZE * DEFAULT_SAMPLE_RATE as f32 * get_max_float(&delays_vec)) as usize, // Max buffer size
         );
 
-        fdn.set_lowpass_cutoff(lowpass, DEFAULT_SAMPLE_RATE);
+        fdn.set_cutoff(lowpass);
 
         Self {
             params: Arc::new(default_params),
@@ -80,7 +81,7 @@ impl Default for JverbParams {
                 1.0,
                 FloatRange::Linear {
                     min: 0.5,
-                    max: 10.0,
+                    max: MAX_SIZE,
                 },
             )
             .with_smoother(SmoothingStyle::Linear(1.0))
@@ -92,10 +93,17 @@ impl Default for JverbParams {
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
             // Lowpass cutoff
-            lowpass: FloatParam::new("Lowpass", 0.8, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_smoother(SmoothingStyle::Linear(1.0))
-                .with_value_to_string(formatters::v2s_f32_percentage(0))
-                .with_string_to_value(formatters::s2v_f32_percentage()),
+            lowpass: FloatParam::new(
+                "Lowpass",
+                0.25,
+                FloatRange::Linear {
+                    min: 0.001,
+                    max: 0.5,
+                },
+            )
+            .with_smoother(SmoothingStyle::Linear(1.0))
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage()),
         }
     }
 }
@@ -131,12 +139,18 @@ impl Plugin for Jverb {
     fn initialize(
         &mut self,
         _bus_config: &BusConfig,
-        _buffer_config: &BufferConfig,
+        buffer_config: &BufferConfig,
         _context: &mut impl InitContext,
     ) -> bool {
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
+
+        // TODO: what if this changes?
+        let sample_rate = buffer_config.sample_rate;
+
+        self.audio
+            .set_max_delays((MAX_SIZE * sample_rate * get_max_float(&self.delays_vec)) as usize);
         true
     }
 
@@ -162,11 +176,10 @@ impl Plugin for Jverb {
         self.audio.set_delays(
             self.delays_vec
                 .iter()
-                .map(|delay| (delay * size * DEFAULT_SAMPLE_RATE as f32) as usize)
+                .map(|delay| (delay * size * sample_rate as f32) as usize)
                 .collect(),
         );
-        self.audio
-            .set_lowpass_cutoff(lowpass * sample_rate / 10.0, sample_rate as usize);
+        self.audio.set_cutoff(lowpass);
 
         // Simple equal power dry/wet mix
         let (wet_t, dry_t) = (mix.sqrt(), (1.0 - mix).sqrt());

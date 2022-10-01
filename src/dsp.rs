@@ -36,6 +36,10 @@ impl IntegerDelay {
             }
         }
     }
+
+    pub fn set_max_delay(&mut self, max_delay: usize) -> () {
+        self.buffer.resize(max_delay, 0f32);
+    }
 }
 
 impl Signal for IntegerDelay {
@@ -81,54 +85,47 @@ impl<T: Signal> Feedback<T> {
 }
 
 #[derive(Clone)]
-pub struct OnePoleLowpass {
-    value: f32,
-    coeff: f32,
-    cutoff: f32,
+pub struct OnePole {
+    y1: f32,
+    a0: f32,
+    b1: f32,
 }
 
-impl Signal for OnePoleLowpass {
+// // A one pole filter, https://ccrma.stanford.edu/~jos/fp/One_Pole.html
+impl Signal for OnePole {
     fn tick(&mut self, input: f32) -> f32 {
-        // Bypass
-        if self.cutoff == 1.0 {
-            return input;
-        }
-        self.value = (1.0 - self.coeff) * input + self.coeff * self.value;
-        self.value
+        self.y1 = input * self.a0 + self.y1 * self.b1;
+        self.y1
     }
 }
 
-impl OnePoleLowpass {
-    pub fn new(cutoff: f32, sample_rate: usize) -> Self {
-        let mut filter = Self {
-            value: 0f32,
-            coeff: 0f32,
-            cutoff: 0f32,
-        };
-
-        filter.set_cutoff(cutoff, sample_rate);
+impl OnePole {
+    pub fn new(cutoff: f32) -> Self {
+        let mut filter = Self::default();
+        filter.set_cutoff(cutoff);
         filter
     }
 
-    pub fn set_cutoff(&mut self, cutoff: f32, sample_rate: usize) -> () {
-        self.cutoff = cutoff;
-        self.coeff = (-TAU * self.cutoff / sample_rate as f32).exp();
+    pub fn set_cutoff(&mut self, cutoff: f32) -> () {
+        let x = (-TAU * cutoff).exp();
+        self.a0 = 1.0 - x;
+        self.b1 = x;
     }
 }
 
-impl Default for OnePoleLowpass {
+impl Default for OnePole {
     fn default() -> Self {
         Self {
-            value: 0f32,
-            coeff: 0f32,
-            cutoff: 1f32,
+            y1: 0f32,
+            a0: 1f32,
+            b1: 0f32,
         }
     }
 }
 
 pub struct HouseholderFDN {
     delays: Vec<IntegerDelay>,
-    filters: Vec<OnePoleLowpass>,
+    filters: Vec<OnePole>,
     values: Vec<f32>,
     gain: f32,
 }
@@ -141,7 +138,7 @@ impl HouseholderFDN {
             .map(|delay| IntegerDelay::new(max_delay, *delay))
             .collect();
 
-        let filters = vec![OnePoleLowpass::default(); matrix_size];
+        let filters = vec![OnePole::default(); matrix_size];
 
         Self {
             delays: delays,
@@ -217,15 +214,28 @@ impl HouseholderFDN {
 
     pub fn set_delays(&mut self, delays: Vec<usize>) -> () {
         for (ii, delay) in delays.iter().enumerate() {
-            self.delays[ii].set_delay(*delay)
+            self.delays[ii].set_delay(*delay);
         }
     }
 
-    pub fn set_lowpass_cutoff(&mut self, cutoff: f32, sample_rate: usize) -> () {
-        for filter in self.filters.iter_mut() {
-            filter.set_cutoff(cutoff, sample_rate);
+    pub fn set_max_delays(&mut self, max_delay: usize) -> () {
+        for delay in self.delays.iter_mut() {
+            delay.set_max_delay(max_delay);
         }
     }
+
+    pub fn set_cutoff(&mut self, cutoff: f32) -> () {
+        for filter in self.filters.iter_mut() {
+            filter.set_cutoff(cutoff);
+        }
+    }
+}
+
+pub fn get_max_float(values: &Vec<f32>) -> f32 {
+    let mut sorted = values.clone();
+    sorted.sort_by(|a, b| b.total_cmp(a));
+
+    sorted[0]
 }
 
 #[cfg(test)]
@@ -282,30 +292,13 @@ mod tests {
 
     #[test]
     fn test_one_pole_lowpass() {
-        let mut lowpass = OnePoleLowpass::new(0.9, 10);
+        let mut lowpass = OnePole::new(0.09);
 
         assert_eq!(lowpass.tick(1.0), 0.43191642);
         assert_eq!(lowpass.tick(1.0), 0.677281);
 
-        // Bypass at max cutoff
-        lowpass.set_cutoff(1.0, 10);
-        assert_eq!(lowpass.tick(1.0), 1.0);
-    }
-
-    #[test]
-    fn test_one_pole_lowpass_realistic_sample_rate() {
-        let mut lowpass = OnePoleLowpass::new(
-            // TODO: this is weird
-            0.9 * 44100.0 / 10.0,
-            44100,
-        );
-
-        assert_eq!(lowpass.tick(1.0), 0.43191642);
-        assert_eq!(lowpass.tick(1.0), 0.677281);
-
-        // Bypass at max cutoff
-        lowpass.set_cutoff(1.0, 10);
-        assert_eq!(lowpass.tick(1.0), 1.0);
+        lowpass.set_cutoff(1.0);
+        assert_eq!(lowpass.tick(1.0), 0.9993974);
     }
 
     #[test]
@@ -356,7 +349,7 @@ mod tests {
     fn test_fdn_lowpass() {
         let mut fdn = HouseholderFDN::new(vec![2, 3, 5, 7], 1.0, 10);
 
-        fdn.set_lowpass_cutoff(0.9, 10);
+        fdn.set_cutoff(0.09);
 
         for _i in 0..10 {
             fdn.process(vec![1.0, 1.0]);
@@ -365,5 +358,10 @@ mod tests {
         assert_eq!(fdn.process(vec![1.0, 1.0]), [0.70215225, 0.64007735]);
         assert_eq!(fdn.process(vec![1.0, 1.0]), [0.52303684, 0.52741337]);
         assert_eq!(fdn.process(vec![1.0, 1.0]), [0.41039184, 0.44365278]);
+    }
+
+    #[test]
+    fn test_sort() {
+        assert_eq!(get_max_float(&vec![0.1, 0.2, 0.3]), 0.3);
     }
 }
