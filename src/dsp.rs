@@ -502,8 +502,6 @@ mod tests {
     use super::*;
     use assert_no_alloc::*;
 
-    // Set up in nih_plug
-    // #[cfg(debug_assertions)] // required when disable_release is set (default)]
     #[global_allocator]
     static A: AllocDisabler = AllocDisabler;
 
@@ -602,11 +600,18 @@ mod tests {
 
         assert_eq!(junction.split([1.0, 1.0]), [1.0; 32]);
 
+        let mut input = [0.25; 32];
+        for ii in 0..16 {
+            input[ii] = 1.0;
+        }
+
+        assert_eq!(junction.split([1.0, 0.25]), input);
+
         assert_eq!(junction.join([1.0; 32]), [1.0, 1.0]);
 
         let mut output = [0.25; 32];
         for ii in 0..16 {
-            output[ii] = 1.0
+            output[ii] = 1.0;
         }
 
         assert_eq!(junction.join(output), [1.0, 0.25]);
@@ -673,6 +678,47 @@ mod tests {
     }
 
     #[test]
+    fn test_hadamard_algo() {
+        let mut example_output = [1.0; 4];
+
+        // Hardcoded hadamard matrix
+        let example_matrix: [[i32; 4]; 4] = [
+            [1, 1, 1, 1],
+            [1, -1, 1, -1],
+            [1, 1, -1, -1],
+            [1, -1, -1, 1],
+        ];
+
+        for (ii, row) in example_matrix.iter().enumerate() {
+            let mut sum = 0;
+            for (ii, val) in row.iter().enumerate() {
+                sum += 1 * *val;
+            }
+            example_output[ii] = sum as f32;
+        }
+
+        let mut algo_output = [1.0; 4];
+
+        // The algo used in the Hadamard FDN implementation
+        let mut h = 1;
+        while h < 4 {
+            let mut i = 0;
+            while i < 4 {
+                for j in i..i + h {
+                    let x = algo_output[j];
+                    let y = algo_output[j + h];
+                    algo_output[j] = x + y;
+                    algo_output[j + h] = x - y;
+                }
+                i += h * 2;
+            }
+            h *= 2;
+        }
+
+        assert_eq!(algo_output, example_output);
+    }
+
+    #[test]
     fn test_hadamard_fdn() {
         const DELAYS: [usize; 4] = [2, 3, 5, 7];
         const DELAYS_LEN: usize = DELAYS.len();
@@ -684,28 +730,6 @@ mod tests {
         for _i in 0..10 {
             fdn.tick(junction.split([1.0, 1.0]));
         }
-
-        // let example_matrix: [[i32; 4]; 4] = [
-        //     [1, 1, 1, 1],
-        //     [1, -1, 1, -1],
-        //     [1, 1, -1, -1],
-        //     [1, -1, -1, 1],
-        // ];
-
-        // let mut output = [0; 4];
-
-        // for (ii, row) in example_matrix.iter().enumerate() {
-        //     let mut sum = 0;
-        //     for (ii, val) in row.iter().enumerate() {
-        //         sum += 1 * *val;
-        //     }
-        //     output[ii] = sum;
-        // }
-
-        // println!("{:?}", "Example");
-        // for row in output.iter() {
-        //     println!("{:?}", row);
-        // }
 
         assert_eq!(
             junction.join(fdn.tick(junction.split([1.0, 1.0]))),
