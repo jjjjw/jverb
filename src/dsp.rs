@@ -13,12 +13,40 @@ pub fn get_max_float(values: &[f32]) -> f32 {
     max
 }
 
-// Stolen from: https://github.com/SamiPerttu/fundsp/blob/50811676691a3d066964241e344987d4c45c3e9d/src/prelude.rs#L1469
+// Uniform random between 0.3 and 0.8
 pub const DELAYS: [f32; 32] = [
-    0.073904, 0.052918, 0.066238, 0.066387, 0.037783, 0.080073, 0.050961, 0.075900, 0.043646,
-    0.072095, 0.056194, 0.045961, 0.058934, 0.068016, 0.047529, 0.058156, 0.072972, 0.036084,
-    0.062715, 0.076377, 0.044339, 0.076725, 0.077884, 0.046126, 0.067741, 0.049800, 0.051709,
-    0.082923, 0.070121, 0.079315, 0.055039, 0.081859,
+    0.7635944581685638,
+    0.5054930849771431,
+    0.6367330554100172,
+    0.5988550749564814,
+    0.5627433438493729,
+    0.5292359969882741,
+    0.39609197804744667,
+    0.44730718318451523,
+    0.6209089620338925,
+    0.3002814785332507,
+    0.691114361058875,
+    0.5725195228704965,
+    0.5018684398985229,
+    0.40848200614524044,
+    0.38804969100135855,
+    0.547990456049264,
+    0.5411968694743376,
+    0.5355559000178921,
+    0.7761144831398028,
+    0.5059573559952342,
+    0.418257481544177,
+    0.4566727793084992,
+    0.41703684491687243,
+    0.7100284150808744,
+    0.7510161891522189,
+    0.4399213022865711,
+    0.38414361694332666,
+    0.6607107641090827,
+    0.6706640816518474,
+    0.47339770016067245,
+    0.7967096565876597,
+    0.6578104668408047,
 ];
 
 pub const DEFAULT_SAMPLE_RATE: usize = 44100;
@@ -408,7 +436,7 @@ impl<const CHANNELS: usize> MultiSignal<CHANNELS> for HadamardFDN<CHANNELS> {
             *sample = self.filters[ii].tick(self.delays[ii].tick(input)) * self.gain;
         }
 
-        // Hadamard feedback matrix 
+        // Hadamard feedback matrix
         // https://ccrma.stanford.edu/~jos/pasp/Hadamard_Matrix.html
         // https://github.com/SamiPerttu/fundsp/blob/50811676691a3d066964241e344987d4c45c3e9d/src/feedback.rs#L9
         let mut h = 1;
@@ -468,8 +496,6 @@ impl<const CHANNELS: usize> MultiSignal<CHANNELS> for HadamardFDN<CHANNELS> {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -653,10 +679,10 @@ mod tests {
         }
 
         // let example_matrix: [[i32; 4]; 4] = [
-        //     [1, 1, 1, 1], 
-        //     [1, -1, 1, -1], 
-        //     [1, 1, -1, -1], 
-        //     [1, -1, -1, 1], 
+        //     [1, 1, 1, 1],
+        //     [1, -1, 1, -1],
+        //     [1, 1, -1, -1],
+        //     [1, -1, -1, 1],
         // ];
 
         // let mut output = [0; 4];
@@ -705,8 +731,9 @@ mod tests {
         assert_no_alloc(|| {
             reverb.set_mix(0.75);
             reverb.set_gain(2.0);
-            reverb
-                .set_delays(DELAYS.map(|delay| (delay * 0.5 * DEFAULT_SAMPLE_RATE as f32) as usize));
+            reverb.set_delays(
+                DELAYS.map(|delay| (delay * 0.5 * DEFAULT_SAMPLE_RATE as f32) as usize),
+            );
             reverb.set_cutoff(1.0);
 
             reverb.process_buffer_slice(&mut [&mut [0.5; 64], &mut [0.5; 64]]);

@@ -4,7 +4,7 @@ use dsp::*;
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
-const MAX_SIZE: f32 = 10.0;
+const MAX_SIZE: f32 = 1.0;
 
 struct Jverb {
     params: Arc<JverbParams>,
@@ -58,7 +58,7 @@ impl Default for JverbParams {
                 "Size",
                 1.0,
                 FloatRange::Linear {
-                    min: 0.5,
+                    min: 0.1,
                     max: MAX_SIZE,
                 },
             )
