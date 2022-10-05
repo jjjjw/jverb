@@ -109,7 +109,7 @@ impl Reverb {
                 .join(self.fdn.tick(self.junction.split(samples)));
 
             channels[0][ii] = (channels[0][ii] * dry_t) + (output[0] * wet_t);
-            channels[1][ii] = (channels[0][ii] * dry_t) + (output[1] * wet_t);
+            channels[1][ii] = (channels[1][ii] * dry_t) + (output[1] * wet_t);
         }
     }
 }
@@ -603,6 +603,13 @@ mod tests {
         assert_eq!(junction.split([1.0, 1.0]), [1.0; 32]);
 
         assert_eq!(junction.join([1.0; 32]), [1.0, 1.0]);
+
+        let mut output = [0.25; 32];
+        for ii in 0..16 {
+            output[ii] = 1.0
+        }
+
+        assert_eq!(junction.join(output), [1.0, 0.25]);
     }
 
     #[test]
@@ -725,7 +732,7 @@ mod tests {
             0.5,
             0.9,
             0.9,
-            (10.0 * DEFAULT_SAMPLE_RATE as f32 * get_max_float(&DELAYS)) as usize,
+            (DEFAULT_SAMPLE_RATE as f32 * get_max_float(&DELAYS)) as usize,
         );
 
         assert_no_alloc(|| {
