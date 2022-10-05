@@ -4,20 +4,11 @@ use dsp::*;
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
-const DEFAULT_SAMPLE_RATE: usize = 44100;
-// Stolen from: https://github.com/SamiPerttu/fundsp/blob/50811676691a3d066964241e344987d4c45c3e9d/src/prelude.rs#L1469
-const DELAYS: [f32; 32] = [
-    0.073904, 0.052918, 0.066238, 0.066387, 0.037783, 0.080073, 0.050961, 0.075900, 0.043646,
-    0.072095, 0.056194, 0.045961, 0.058934, 0.068016, 0.047529, 0.058156, 0.072972, 0.036084,
-    0.062715, 0.076377, 0.044339, 0.076725, 0.077884, 0.046126, 0.067741, 0.049800, 0.051709,
-    0.082923, 0.070121, 0.079315, 0.055039, 0.081859,
-];
 const MAX_SIZE: f32 = 10.0;
 
 struct Jverb {
     params: Arc<JverbParams>,
-    audio: HouseholderFDN,
-    delays_vec: Vec<f32>,
+    audio: Reverb,
 }
 
 #[derive(Params)]
@@ -35,33 +26,20 @@ struct JverbParams {
 impl Default for Jverb {
     fn default() -> Self {
         let default_params = JverbParams::default();
+        let mix = default_params.mix.smoothed.next();
         let time = default_params.time.smoothed.next();
         let lowpass = default_params.lowpass.smoothed.next();
 
-        let delays_vec = DELAYS.to_vec();
-
-        let mut fdn = HouseholderFDN::new(
-            // Simple testing primes
-            // vec![
-            //     (DEFAULT_SAMPLE_RATE as f32 * 0.02) as usize,
-            //     (DEFAULT_SAMPLE_RATE as f32 * 0.03) as usize,
-            //     (DEFAULT_SAMPLE_RATE as f32 * 0.05) as usize,
-            //     (DEFAULT_SAMPLE_RATE as f32 * 0.07) as usize
-            // ],
-            delays_vec
-                .iter()
-                .map(|delay| (delay * DEFAULT_SAMPLE_RATE as f32) as usize)
-                .collect(),
+        let reverb = Reverb::new(
+            mix,
+            lowpass,
             time,
-            (MAX_SIZE * DEFAULT_SAMPLE_RATE as f32 * get_max_float(&delays_vec)) as usize, // Max buffer size
+            (MAX_SIZE * DEFAULT_SAMPLE_RATE as f32 * get_max_float(&DELAYS)) as usize, // Max buffer size
         );
-
-        fdn.set_cutoff(lowpass);
 
         Self {
             params: Arc::new(default_params),
-            delays_vec,
-            audio: fdn,
+            audio: reverb,
         }
     }
 }
@@ -132,8 +110,9 @@ impl Plugin for Jverb {
     }
 
     fn accepts_bus_config(&self, config: &BusConfig) -> bool {
-        // Works with any symmetrical channel input
-        config.num_input_channels == config.num_output_channels && config.num_input_channels > 0
+        // Works with stereo
+        config.num_input_channels == config.num_output_channels && config.num_input_channels == 2
+        // && config.num_input_channels <= (DELAYS.len() / 4) as u32
     }
 
     fn initialize(
@@ -145,18 +124,18 @@ impl Plugin for Jverb {
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
-
-        // TODO: what if this changes?
         let sample_rate = buffer_config.sample_rate;
 
         self.audio
-            .set_max_delays((MAX_SIZE * sample_rate * get_max_float(&self.delays_vec)) as usize);
+            .set_max_delays((MAX_SIZE * sample_rate * get_max_float(&DELAYS)) as usize);
         true
     }
 
     fn reset(&mut self) {
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
+
+        self.audio.reset();
     }
 
     fn process(
@@ -172,29 +151,13 @@ impl Plugin for Jverb {
 
         let sample_rate = context.transport().sample_rate;
 
+        self.audio.set_mix(mix);
         self.audio.set_gain(time);
-        self.audio.set_delays(
-            self.delays_vec
-                .iter()
-                .map(|delay| (delay * size * sample_rate as f32) as usize)
-                .collect(),
-        );
+        self.audio
+            .set_delays(DELAYS.map(|delay| (delay * size * sample_rate as f32) as usize));
         self.audio.set_cutoff(lowpass);
 
-        // Simple equal power dry/wet mix
-        let (wet_t, dry_t) = (mix.sqrt(), (1.0 - mix).sqrt());
-
-        let channels = buffer.as_slice();
-
-        for ii in 0..channels[0].len() {
-            let samples = (0..channels.len()).map(|yy| channels[yy][ii]).collect();
-
-            let output = self.audio.process(samples);
-
-            for yy in 0..channels.len() {
-                channels[yy][ii] = (channels[yy][ii] * dry_t) + (output[yy] * wet_t);
-            }
-        }
+        self.audio.process_buffer_slice(buffer.as_slice());
 
         ProcessStatus::Normal
     }

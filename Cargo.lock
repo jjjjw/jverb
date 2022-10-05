@@ -26,7 +26,7 @@ checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
 [[package]]
 name = "assert_no_alloc"
 version = "1.1.2"
-source = "git+https://github.com/robbert-vdh/rust-assert-no-alloc.git?branch=nih-plug#95120d996240a2c279a6067502e11b62d30563a6"
+source = "git+https://github.com/Windfisch/rust-assert-no-alloc#d31f2d5f550ce339d1c2f0c1ab7da951224b20df"
 dependencies = [
  "backtrace",
 ]
@@ -190,6 +190,7 @@ checksum = "6c8af84674fe1f223a982c933a0ee1086ac4d4052aa0fb8060c12c6ad838e754"
 name = "jverb"
 version = "0.1.0"
 dependencies = [
+ "assert_no_alloc",
  "nih_plug",
 ]
 
@@ -260,7 +261,6 @@ version = "0.0.0"
 source = "git+https://github.com/robbert-vdh/nih-plug.git#963d1bd14ffc47b744ca32abb5f4165b947c0f31"
 dependencies = [
  "anyhow",
- "assert_no_alloc",
  "atomic_float",
  "atomic_refcell",
  "backtrace",
