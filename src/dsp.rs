@@ -194,13 +194,15 @@ impl IntegerDelay {
             return;
         }
 
+        let old_delay = self.delay;
+
         // Delay can't be longer than the max delay length
         self.delay = delay.min(self.buffer.len() - 1);
 
         // Clear the buffer. It can be fun not to, however
-        for (ii, sample) in self.buffer.iter_mut().enumerate() {
-            if ii >= self.delay {
-                *sample = 0.0;
+        if self.delay < old_delay {
+            for ii in self.delay..old_delay {
+                self.buffer[ii] = 0.0;
             }
         }
     }
@@ -682,12 +684,8 @@ mod tests {
         let mut example_output = [1.0; 4];
 
         // Hardcoded hadamard matrix
-        let example_matrix: [[i32; 4]; 4] = [
-            [1, 1, 1, 1],
-            [1, -1, 1, -1],
-            [1, 1, -1, -1],
-            [1, -1, -1, 1],
-        ];
+        let example_matrix: [[i32; 4]; 4] =
+            [[1, 1, 1, 1], [1, -1, 1, -1], [1, 1, -1, -1], [1, -1, -1, 1]];
 
         for (ii, row) in example_matrix.iter().enumerate() {
             let mut sum = 0;
